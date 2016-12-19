@@ -21,15 +21,38 @@ import os
 import random
 import socket
 
+from aiohttp import web
+
 from aioservice.http import requests
 from aioservice.http import controller
 from aioservice.http import service
 
-from voteapp import picasso
+from keystoneauth1.identity import generic
+from keystoneauth1 import session
+from picassoclient import client
+
 
 OPTION_A = "cats"
 OPTION_B = "dogs"
 HOSTNAME = socket.gethostname()
+
+
+class PicassoClient(object):
+
+    def __init__(self, os_auth_url, os_username, os_password, os_project_name):
+
+        auth = generic.Password(auth_url=os_auth_url,
+                                username=os_username,
+                                password=os_password,
+                                project_name=os_project_name,
+                                project_domain_id="default",
+                                user_domain_id="default")
+        auth_session = session.Session(auth=auth)
+        self.__client = client.Client('v1', session=auth_session)
+
+    @property
+    def client(self):
+        return self.__client
 
 
 class Singleton(type):
@@ -81,13 +104,8 @@ class Votes(controller.ServiceController):
             'vote': vote,
             'vote_id': voter
         }
-        res = cfg.picassoclient.routes.execute(cfg.app_name, "/vote", **task_data)
-        response = aiohttp_jinja2.render_template("index.html", request, {
-            "option_a": OPTION_A,
-            "option_b": OPTION_B,
-            "hostname": HOSTNAME,
-        })
-        return response
+        cfg.picassoclient.routes.execute(cfg.app_name, "/vote", **task_data)
+        return web.HTTPFound("/voteapp/results")
 
     @requests.api_action(method="GET", route="results")
     async def get_results(self, request):
@@ -107,6 +125,10 @@ class Votes(controller.ServiceController):
         })
         return response
 
+    @requests.api_action(method="POST", route="results")
+    async def go_back_to_votes(self, request):
+        return web.HTTPFound("/voteapp/vote")
+
 
 class VoteApp(service.HTTPService):
 
@@ -114,7 +136,7 @@ class VoteApp(service.HTTPService):
                  port: int=9999,
                  pg_dns: str=None,
                  app_name: str=None,
-                 picassoclient: picasso.PicassoClient=None,
+                 picassoclient: PicassoClient=None,
                  loop: asyncio.AbstractEventLoop=asyncio.get_event_loop(),
                  logger=None,
                  debug=False):
@@ -175,7 +197,7 @@ class VoteApp(service.HTTPService):
               help='API service port.')
 @click.option('--pg-host',
               default=os.getenv("PG_HOST"),
-              help='VoteApp PostgreSQL connection.')
+              help='PostgreSQL connection host.')
 @click.option('--pg-username',
               default=os.getenv("DB_USER", "postgres"),
               help='VoteApp PostgreSQL user.')
@@ -186,11 +208,16 @@ class VoteApp(service.HTTPService):
               default=os.getenv(
                   "DB_NAME", 'votes'),
               help='VoteApp PostgreSQL connection.')
-@click.option("--app-name", help="Fn/Picasso", default=os.getenv('APP_NAME'))
-@click.option("--os-auth-url", default=os.getenv("OS_AUTH_URL"))
-@click.option("--os-username", default=os.getenv("OS_USERNAME"))
-@click.option("--os-password", default=os.getenv("OS_PASSWORD"))
-@click.option("--os-project-name", default=os.getenv("OS_PROJECT_NAME"))
+@click.option("--app-name", help="Existing Picasso app name",
+              default=os.getenv('APP_NAME'))
+@click.option("--os-auth-url", default=os.getenv("OS_AUTH_URL"),
+              help="OpenStack Auth URL")
+@click.option("--os-username", default=os.getenv("OS_USERNAME"),
+              help="OpenStack User")
+@click.option("--os-password", default=os.getenv("OS_PASSWORD"),
+              help="OpenStack User password")
+@click.option("--os-project-name", default=os.getenv("OS_PROJECT_NAME"),
+              help="OpenStack User project")
 def server(host, port, pg_host,
            pg_username, pg_password,
            pg_db, app_name, os_auth_url,
@@ -203,7 +230,7 @@ def server(host, port, pg_host,
             user=pg_username,
             passwd=pg_password)
     )
-    picassoclient = picasso.PicassoClient(
+    picassoclient = PicassoClient(
         os_auth_url, os_username,
         os_password, os_project_name)
     loop = asyncio.get_event_loop()
