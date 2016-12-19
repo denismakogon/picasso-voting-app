@@ -17,18 +17,14 @@ from keystoneauth1 import session
 from picassoclient import client
 
 
-class PicassonClient(object):
+class PicassoClient(object):
 
-    def __init__(self):
-        OS_AUTH_URL = "http://192.168.0.114:5000/v3"
-        OS_USERNAME = "demo"
-        OS_PASSWORD = "root"
-        OS_PROJECT_NAME = "demo"
+    def __init__(self, os_auth_url, os_username, os_password, os_project_name):
 
-        auth = generic.Password(auth_url=OS_AUTH_URL,
-                                username=OS_USERNAME,
-                                password=OS_PASSWORD,
-                                project_name=OS_PROJECT_NAME,
+        auth = generic.Password(auth_url=os_auth_url,
+                                username=os_username,
+                                password=os_password,
+                                project_name=os_project_name,
                                 project_domain_id="default",
                                 user_domain_id="default")
         auth_session = session.Session(auth=auth)

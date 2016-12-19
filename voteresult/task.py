@@ -24,12 +24,13 @@ async def select_votes(pg_dns):
                     vote, count = row
                     result[vote] += count
                 total_votes = sum(list(result.values()))
-                for k, v in result.items():
-                    result["{}_percent".format(k)] = (
-                        float(v / total_votes)
+                full_result = dict(result)
+                for k, v in list(full_result.items()):
+                    full_result["{}_percent".format(k)] = (
+                        float(v / total_votes) * 100
                         if total_votes != 0 else float(0))
-                result['total'] = total_votes
-                return result
+                full_result['total'] = total_votes
+                return full_result
 
 if __name__ == "__main__":
     if not os.isatty(sys.stdin.fileno()):
