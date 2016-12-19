@@ -154,7 +154,7 @@ class VoteApp(service.HTTPService):
                 return
 
         print('App found', picassoclient.client.apps.show(app_name)['app'])
-        check_route(app_name, "sync", "/vote",
+        check_route(app_name, "async", "/vote",
                     "denismakogon/vote-task", timeout=60)
         check_route(app_name, "sync", "/results",
                     "denismakogon/result-task", timeout=60)
