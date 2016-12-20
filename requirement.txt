@@ -1,5 +1,0 @@
-click
-aioservice
-aiohttp_jinja2
-python-picassoclient
-python-functionsclient
