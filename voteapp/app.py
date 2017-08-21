@@ -13,6 +13,7 @@
 #    under the License.
 
 import asyncio
+import aiohttp
 import aiohttp_jinja2
 import click
 import jinja2
@@ -27,10 +28,6 @@ from aioservice.http import requests
 from aioservice.http import controller
 from aioservice.http import service
 
-from keystoneauth1.identity import generic
-from keystoneauth1 import session
-from picassoclient import client
-
 
 OPTION_A = "cats"
 OPTION_B = "dogs"
@@ -39,20 +36,8 @@ HOSTNAME = socket.gethostname()
 
 class PicassoClient(object):
 
-    def __init__(self, os_auth_url, os_username, os_password, os_project_name):
-
-        auth = generic.Password(auth_url=os_auth_url,
-                                username=os_username,
-                                password=os_password,
-                                project_name=os_project_name,
-                                project_domain_id="default",
-                                user_domain_id="default")
-        auth_session = session.Session(auth=auth)
-        self.__client = client.Client('v1', session=auth_session)
-
-    @property
-    def client(self):
-        return self.__client
+    def __init__(self):
+        pass
 
 
 class Singleton(type):
@@ -104,26 +89,35 @@ class Votes(controller.ServiceController):
             'vote': vote,
             'vote_id': voter
         }
-        cfg.picassoclient.routes.execute(cfg.app_name, "/vote", **task_data)
+        with aiohttp.ClientSession() as s:
+            resp = await s.post(
+                "{}/r/{}{}".format(cfg.api_url, cfg.app_name, cfg.vote_route),
+                json=task_data
+            )
+            resp.raise_for_status()
         return web.HTTPFound("/voteapp/results")
 
     @requests.api_action(method="GET", route="results")
     async def get_results(self, request):
-        cfg = Config.config_instance()
-        task_data = {
-            'pg_dns': cfg.pg_dns,
-        }
-        str_results = cfg.picassoclient.routes.execute(
-            cfg.app_name, "/results", **task_data)
-        data = json.loads(str_results['result'])
-        response = aiohttp_jinja2.render_template("results.html", request, {
-            "option_a": OPTION_A,
-            "option_b": OPTION_B,
-            "option_a_percent": data.get("{}_percent".format(OPTION_A)),
-            "option_b_percent": data.get("{}_percent".format(OPTION_B)),
-            "total": data.get("total")
-        })
-        return response
+        with aiohttp.ClientSession() as s:
+            cfg = Config.config_instance()
+            task_data = {
+                'pg_dns': cfg.pg_dns,
+            }
+            str_results = await s.post(
+                "{}/r/{}{}".format(cfg.api_url, cfg.app_name, cfg.results_route),
+                json=task_data
+            )
+            str_results.raise_for_status()
+            data = json.loads(await str_results.text())
+            response = aiohttp_jinja2.render_template("results.html", request, {
+                "option_a": OPTION_A,
+                "option_b": OPTION_B,
+                "option_a_percent": data.get("{}_percent".format(OPTION_A)),
+                "option_b_percent": data.get("{}_percent".format(OPTION_B)),
+                "total": data.get("total")
+            })
+            return response
 
     @requests.api_action(method="POST", route="results")
     async def go_back_to_votes(self, request):
@@ -136,12 +130,15 @@ class VoteApp(service.HTTPService):
                  port: int=9999,
                  pg_dns: str=None,
                  app_name: str=None,
-                 picassoclient: PicassoClient=None,
+                 api_url: str=None,
                  loop: asyncio.AbstractEventLoop=asyncio.get_event_loop(),
                  logger=None,
                  debug=False):
 
         tmpl_path = os.path.join(os.getcwd(), 'templates')
+        self.api_url = api_url
+        self.app_name = app_name
+        self.pg_dns = pg_dns
 
         def jinja_hook(subapp):
             aiohttp_jinja2.setup(subapp,
@@ -165,27 +162,56 @@ class VoteApp(service.HTTPService):
                              loader=jinja2.FileSystemLoader(
                                  os.path.join(os.getcwd(), 'templates')))
 
-        def check_route(app_name, *args, **kwargs):
-            try:
-                _route = picassoclient.client.routes.create(
-                    app_name, *args, **kwargs)
-                print('Route created', _route['route'])
-            except Exception as ex:
-                print('Route found',
-                      picassoclient.client.routes.show(app_name, args[1]))
-                return
+        def check_route(app_name, ftype, route, image, timeout=60):
+                # creating function's app/route
+                async def do_request():
+                    with aiohttp.ClientSession() as session:
+                        try:
+                            _route = await session.post(
+                                "{}/v1/apps/{}/routes".format(api_url, app_name),
+                                json={
+                                    "route": {
+                                            "image": image,
+                                            "path": route,
+                                            "type": ftype,
+                                            "timeout": timeout
+                                        }
+                                })
+                            _route.raise_for_status()
+                            _route = await _route.json()
+                            _app = await session.get("{}/v1/apps/{}".format(api_url, app_name))
+                            _app.raise_for_status()
+                            _app = await _app.json()
+                            print('Route created', _route['route'])
+                            print('App found', _app['app'])
+                        except Exception as _:
+                            _app = await session.get("{}/v1/apps/{}".format(api_url, app_name))
+                            _app.raise_for_status()
+                            _app = await _app.json()
+                            print('App found', _app['app'])
+                            _route = await session.get(
+                                "{}/v1/apps/{}/routes{}".format(api_url, app_name, route))
+                            _route.raise_for_status()
+                            _route = await _route.json()
+                            print("Route found: ", _route['route'])
+                            return
 
-        print('App found', picassoclient.client.apps.show(app_name)['app'])
+                loop.run_until_complete(do_request())
+
         check_route(app_name, "async", "/vote",
                     "denismakogon/vote-task", timeout=60)
         check_route(app_name, "sync", "/results",
                     "denismakogon/result-task", timeout=60)
 
         Config(
-            picassoclient=picassoclient.client,
+            api_url=api_url,
             app_name=app_name,
             pg_dns=pg_dns,
+            vote_route="/vote",
+            results_route="/results"
         )
+
+        super(VoteApp, self).apply_swagger()
         print("Initialization finished.")
 
 
@@ -196,7 +222,7 @@ class VoteApp(service.HTTPService):
 @click.option('--port', default=int(os.getenv("VOTEAPP_PORT", 9999)),
               help='API service port.')
 @click.option('--pg-host',
-              default=os.getenv("PG_HOST"),
+              default=os.getenv("PG_HOST", "localhost"),
               help='PostgreSQL connection host.')
 @click.option('--pg-username',
               default=os.getenv("DB_USER", "postgres"),
@@ -209,19 +235,12 @@ class VoteApp(service.HTTPService):
                   "DB_NAME", 'votes'),
               help='VoteApp PostgreSQL connection.')
 @click.option("--app-name", help="Existing Picasso app name",
-              default=os.getenv('APP_NAME'))
-@click.option("--os-auth-url", default=os.getenv("OS_AUTH_URL"),
-              help="OpenStack Auth URL")
-@click.option("--os-username", default=os.getenv("OS_USERNAME"),
-              help="OpenStack User")
-@click.option("--os-password", default=os.getenv("OS_PASSWORD"),
-              help="OpenStack User password")
-@click.option("--os-project-name", default=os.getenv("OS_PROJECT_NAME"),
-              help="OpenStack User project")
+              default=os.getenv('APP_NAME', 'votes'))
+@click.option("--api-url", help="Existing Picasso app name",
+              default=os.getenv('API_URL', "http://localhost:8080"))
 def server(host, port, pg_host,
            pg_username, pg_password,
-           pg_db, app_name, os_auth_url,
-           os_username, os_password, os_project_name):
+           pg_db, app_name, api_url):
     pg_dns = (
         'dbname={database} user={user} password={passwd} host={host}'
         .format(
@@ -230,15 +249,15 @@ def server(host, port, pg_host,
             user=pg_username,
             passwd=pg_password)
     )
-    picassoclient = PicassoClient(
-        os_auth_url, os_username,
-        os_password, os_project_name)
     loop = asyncio.get_event_loop()
-    VoteApp(app_name=app_name,
-            port=port,
-            picassoclient=picassoclient,
-            host=host, pg_dns=pg_dns,
-            loop=loop).initialize()
+    VoteApp(
+        app_name=app_name,
+        api_url=api_url,
+        port=port,
+        host=host,
+        pg_dns=pg_dns,
+        loop=loop
+    ).initialize()
 
 if __name__ == "__main__":
     server()
