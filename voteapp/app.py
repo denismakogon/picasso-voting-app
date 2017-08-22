@@ -257,7 +257,7 @@ class VoteApp(service.HTTPService):
               default=os.getenv(
                   "DB_NAME", 'votes'),
               help='VoteApp PostgreSQL connection.')
-@click.option("--app-name", help="Existing Picasso app name",
+@click.option("--app-name", help="Existing Fn app name",
               default=os.getenv('APP_NAME', 'votes'))
 @click.option("--api-url", help="Existing Picasso app name",
               default=os.getenv('API_URL', "http://localhost:8080"))
