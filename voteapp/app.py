@@ -83,11 +83,16 @@ class Votes(controller.ServiceController):
         data = await request.post()
         vote = data['vote']
         voter = dict(request.cookies)['voter_id']
+        print(voter)
         cfg = Config.config_instance()
         task_data = {
-            'pg_dns': cfg.pg_dns,
-            'vote': vote,
-            'vote_id': voter
+            "pg_host": cfg.pg_host,
+            "pg_port": cfg.pg_port,
+            "pg_db": cfg.pg_db,
+            "pg_user": cfg.pg_user,
+            "pg_pswd": cfg.pg_pswd,
+            "vote": vote,
+            "vote_id": voter
         }
         with aiohttp.ClientSession() as s:
             resp = await s.post(
@@ -102,14 +107,19 @@ class Votes(controller.ServiceController):
         with aiohttp.ClientSession() as s:
             cfg = Config.config_instance()
             task_data = {
-                'pg_dns': cfg.pg_dns,
+                "pg_host": cfg.pg_host,
+                "pg_port": cfg.pg_port,
+                "pg_db": cfg.pg_db,
+                "pg_user": cfg.pg_user,
+                "pg_pswd": cfg.pg_pswd,
             }
             str_results = await s.post(
                 "{}/r/{}{}".format(cfg.api_url, cfg.app_name, cfg.results_route),
                 json=task_data
             )
             str_results.raise_for_status()
-            data = json.loads(await str_results.text())
+            txt = await str_results.text()
+            data = json.loads(txt)
             response = aiohttp_jinja2.render_template("results.html", request, {
                 "option_a": OPTION_A,
                 "option_b": OPTION_B,
@@ -128,7 +138,11 @@ class VoteApp(service.HTTPService):
 
     def __init__(self, host: str='0.0.0.0',
                  port: int=9999,
-                 pg_dns: str=None,
+                 pg_host: str=None,
+                 pg_port: str= None,
+                 pg_db: str=None,
+                 pg_user: str=None,
+                 pg_pswd: str=None,
                  app_name: str=None,
                  api_url: str=None,
                  loop: asyncio.AbstractEventLoop=asyncio.get_event_loop(),
@@ -138,7 +152,6 @@ class VoteApp(service.HTTPService):
         tmpl_path = os.path.join(os.getcwd(), 'templates')
         self.api_url = api_url
         self.app_name = app_name
-        self.pg_dns = pg_dns
 
         def jinja_hook(subapp):
             aiohttp_jinja2.setup(subapp,
@@ -162,7 +175,7 @@ class VoteApp(service.HTTPService):
                              loader=jinja2.FileSystemLoader(
                                  os.path.join(os.getcwd(), 'templates')))
 
-        def check_route(app_name, ftype, route, image, timeout=60):
+        def check_route(app_name, ftype, route, image, fformat="default", timeout=60):
                 # creating function's app/route
                 async def do_request():
                     with aiohttp.ClientSession() as session:
@@ -174,7 +187,8 @@ class VoteApp(service.HTTPService):
                                             "image": image,
                                             "path": route,
                                             "type": ftype,
-                                            "timeout": timeout
+                                            "timeout": timeout,
+                                            "format": fformat,
                                         }
                                 })
                             _route.raise_for_status()
@@ -199,15 +213,21 @@ class VoteApp(service.HTTPService):
                 loop.run_until_complete(do_request())
 
         check_route(app_name, "async", "/vote",
-                    "denismakogon/vote-task", timeout=60)
+                    "denismakogon/vote-task:0.0.4", fformat="default", timeout=60)
         check_route(app_name, "sync", "/results",
-                    "denismakogon/result-task", timeout=60)
+                    "denismakogon/result-task:0.0.4", fformat="default", timeout=60)
+        check_route(app_name, "async", "/vote-hot",
+                    "denismakogon/votetask-hot:0.0.14", fformat="http", timeout=60)
 
         Config(
             api_url=api_url,
             app_name=app_name,
-            pg_dns=pg_dns,
-            vote_route="/vote",
+            pg_host=pg_host,
+            pg_port=pg_port,
+            pg_db=pg_db,
+            pg_user=pg_user,
+            pg_pswd=pg_pswd,
+            vote_route="/vote-hot",
             results_route="/results"
         )
 
@@ -224,6 +244,9 @@ class VoteApp(service.HTTPService):
 @click.option('--pg-host',
               default=os.getenv("PG_HOST", "localhost"),
               help='PostgreSQL connection host.')
+@click.option('--pg-port',
+              default=os.getenv("PG_PORT", "5432"),
+              help='PostgreSQL connection port.')
 @click.option('--pg-username',
               default=os.getenv("DB_USER", "postgres"),
               help='VoteApp PostgreSQL user.')
@@ -238,24 +261,20 @@ class VoteApp(service.HTTPService):
               default=os.getenv('APP_NAME', 'votes'))
 @click.option("--api-url", help="Existing Picasso app name",
               default=os.getenv('API_URL', "http://localhost:8080"))
-def server(host, port, pg_host,
+def server(host, port, pg_host, pg_port,
            pg_username, pg_password,
            pg_db, app_name, api_url):
-    pg_dns = (
-        'dbname={database} user={user} password={passwd} host={host}'
-        .format(
-            host=pg_host,
-            database=pg_db,
-            user=pg_username,
-            passwd=pg_password)
-    )
     loop = asyncio.get_event_loop()
     VoteApp(
         app_name=app_name,
         api_url=api_url,
         port=port,
         host=host,
-        pg_dns=pg_dns,
+        pg_host=pg_host,
+        pg_port=pg_port,
+        pg_db=pg_db,
+        pg_user=pg_username,
+        pg_pswd=pg_password,
         loop=loop
     ).initialize()
 

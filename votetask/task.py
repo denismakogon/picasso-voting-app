@@ -35,8 +35,17 @@ async def run_vote(pg_dns, vote_id, vote):
 if __name__ == "__main__":
     if not os.isatty(sys.stdin.fileno()):
         obj = json.loads(sys.stdin.read())
-        pg_dns = obj.get('pg_dns')
+        pg_host = obj.get('pg_host')
+        pg_port = obj.get('pg_port')
+        pg_db = obj.get('pg_db')
+        pg_user = obj.get('pg_user')
+        pg_pswd = obj.get('pg_pswd')
         vote_id = obj.get('vote_id')
         vote = obj.get('vote')
+
+        pg_dns = (
+            'dbname={database} user={user} password={passwd} host={host}'
+            .format(host=pg_host, database=pg_db, user=pg_user, passwd=pg_pswd))
+
         loop = asyncio.get_event_loop()
         loop.run_until_complete(run_vote(pg_dns, vote_id, vote))

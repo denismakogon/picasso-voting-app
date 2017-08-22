@@ -32,10 +32,19 @@ async def select_votes(pg_dns):
                 full_result['total'] = total_votes
                 return full_result
 
+
 if __name__ == "__main__":
     if not os.isatty(sys.stdin.fileno()):
         obj = json.loads(sys.stdin.read())
-        pg_dns = obj.get('pg_dns')
+        pg_host = obj.get('pg_host')
+        pg_port = obj.get('pg_port')
+        pg_db = obj.get('pg_db')
+        pg_user = obj.get('pg_user')
+        pg_pswd = obj.get('pg_pswd')
+        pg_dns = (
+            'dbname={database} user={user} password={passwd} host={host}'
+            .format(host=pg_host, database=pg_db, user=pg_user, passwd=pg_pswd))
+
         loop = asyncio.get_event_loop()
         result = loop.run_until_complete(select_votes(pg_dns))
         print(json.dumps(result))

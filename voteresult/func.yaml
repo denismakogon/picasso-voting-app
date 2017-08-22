@@ -1,0 +1,7 @@
+name: denismakogon/result-task
+version: 0.0.4
+runtime: python3
+memory: 128
+format: default
+timeout: 30
+path: /result-task

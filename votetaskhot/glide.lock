@@ -1,0 +1,12 @@
+hash: e9bc478c0fba7a06f9ef785bb7b9c656a8ecdbcd99c65a324f5ae9d2b8037f33
+updated: 2017-08-22T01:07:55.159881868+03:00
+imports:
+- name: github.com/jmoiron/sqlx
+  version: d9bd385d68c068f1fabb5057e3dedcbcbb039d0f
+  subpackages:
+  - reflectx
+- name: github.com/lib/pq
+  version: 8837942c3e09574accbc5f150e2c5e057189cace
+  subpackages:
+  - oid
+testImports: []

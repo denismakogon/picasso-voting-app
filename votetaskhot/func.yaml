@@ -1,0 +1,7 @@
+name: denismakogon/votetask-hot
+version: 0.0.14
+runtime: go
+memory: 128
+format: http
+timeout: 60
+path: /votetask-hot
