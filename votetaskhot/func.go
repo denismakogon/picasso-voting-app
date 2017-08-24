@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"github.com/lib/pq"
 	"github.com/jmoiron/sqlx"
-	"io"
 )
 
 var voteTable = `CREATE TABLE IF NOT EXISTS votes (id VARCHAR(255) NOT NULL UNIQUE, vote VARCHAR(255) NOT NULL)`
@@ -39,15 +38,10 @@ func main()  {
 		req, err := http.ReadRequest(r)
 		var buf bytes.Buffer
 		if err != nil {
-			// EOF means no request supplied
-			if err != io.EOF {
-				res.StatusCode = 500
-				res.Status = http.StatusText(res.StatusCode)
-				fmt.Fprintln(&buf, err)
-				fmt.Fprintf(os.Stderr, "Unable to read request, error: %s", err.Error())
-			} else {
-				continue
-			}
+			res.StatusCode = 500
+			res.Status = http.StatusText(res.StatusCode)
+			fmt.Fprintln(&buf, err)
+			fmt.Fprintf(os.Stderr, "Unable to read request, error: %s", err.Error())
 		} else {
 			l, _ := strconv.Atoi(req.Header.Get("Content-Length"))
 			p := make([]byte, l)
